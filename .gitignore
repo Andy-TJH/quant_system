@@ -21,7 +21,17 @@ logs/
 # Secrets
 .env
 
-# Data (按你的情况调整)
+# Data 
 data/*.csv
 data/*.parquet
 data/*.feather
+
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+
+# data cache
+data/cache/
+data/processed/
+
