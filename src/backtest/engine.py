@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from queue import SimpleQueue,Empty
 from typing import Protocol, Optional, Iterable
@@ -11,6 +12,10 @@ from src.core.events import(
     MarketEvent, SignalEvent, OrderEvent, FillEvent,
     SignalType, Side, OrderType,
 )
+
+from src.engine.event_loop import EventLoop
+from src.modes.backtest import BacktestMode, BacktestConfig
+from src.portfolio.performance_portfolio import PerformancePortfolio
 
 @dataclass
 class BacktestConfig:
@@ -127,21 +132,28 @@ class DummyPortfolio:
         else:
             self.position -= event.fill_qty
 
-
+@dataclass
 class DummyExecution:
+    commission: float = 0.0
+    fill_price: float = 100.0  # 0 表示用订单里的 limit_price/或事件价格
+
     def on_order(self, event: OrderEvent) -> Optional[FillEvent]:
-        fill_price = 101.0
-        commission = 1.0
+        px = self.fill_price
+
         return FillEvent(
-            type = EventType.FILL,
-            timestamp_ms = event.timestamp_ms,
-            symbol = event.symbol,
-            client_order_id = event.client_order_id,
-            gateway_order_id = f"gid-{event.client_order_id}",
-            side = event.side,
-            fill_qty = event.qty,
-            fill_price = fill_price,
-            commission = commission
+            type=EventType.FILL,
+            timestamp_ms=event.timestamp_ms,
+            symbol=event.symbol,
+            side=event.side,
+            fill_qty=event.qty,
+            fill_price=px,
+
+            # 关键：手续费写进去
+            commission=self.commission,
+
+            # 关键：FillEvent 需要的两个 id（按你 dataclass 字段名）
+            client_order_id=event.client_order_id,
+            gateway_order_id=f"gw-{event.client_order_id}",
         )
     
 @dataclass
@@ -176,9 +188,6 @@ class BacktestEngine:
         log.info("RUN_DONE final_position=%s", getattr(self.portfolio, "position", None))
         print(f"Done. Final position: {self.portfolio.position}")
 
-from src.engine.event_loop import EventLoop
-from src.modes.backtest import BacktestMode, BacktestConfig
-
 def main() -> None:
     setup_logging(level="INFO")
     log = get_logger("backtest")
@@ -190,7 +199,7 @@ def main() -> None:
             symbol="AAPL",
         ),
         strategy=DummyStrategy(),
-        portfolio=DummyPortfolio(),
+        portfolio = PerformancePortfolio(initial_cash=100_000.0),
         execution=DummyExecution(),
     )
     mode = BacktestMode(
