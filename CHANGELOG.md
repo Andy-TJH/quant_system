@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Fixed
+- Fixed commission propagation in backtest performance calculation.
+  - Ensure `commission` from `ExecutionHandler` is correctly passed to `FillEvent`.
+  - Update `PerformanceTracker` to apply commission on both BUY and SELL fills.
+  - Record equity updates after fills to avoid stale equity when no subsequent MarketEvent occurs.
+  - Prevent false zero PnL for round-trip trades with non-zero commission.
+
+### Tests
+- Added regression test to ensure `total_pnl < 0` when per-trade commission is applied
+  for a round-trip trade (BUY + SELL) with zero price PnL.
+  
 ### Changed
 - Removed legacy `test/` directory and unified all tests under `tests/`.
 
