@@ -165,115 +165,39 @@ class BacktestEngine:
             execution=self.execution,
         )
 
+
         loop.run_until_data_end()
 
         # 同步 last_ts，给 finalize 用
         self._last_ts_ms = loop.last_ts_ms
         # 复用同一个队列用于 finalize（把 loop.queue 引用过来）
         self._queue = loop.queue  # type: ignore[attr-defined]
-        self._finalize_backtest()
 
         log.info("RUN_DONE final_position=%s", getattr(self.portfolio, "position", None))
         print(f"Done. Final position: {self.portfolio.position}")
 
-    def _finalize_backtest(self) -> None:
-    # 防重入：必须用 try/finally，避免提前 return 导致 _finalizing 永久为 True
-        if getattr(self, "_finalizing", False):
-            return
-        self._finalizing = True
-        try:
-            if not self.config.flatten_on_end:
-                return
-
-            pos = getattr(self.portfolio, "position", 0)
-            if pos == 0:
-                return
-
-            # 取一个“合理的 symbol”
-            symbol = getattr(self.data, "symbol", None) or "UNKNOWN"
-
-            # 用“当前时间戳”作为收口订单的 timestamp_ms（更稳的做法：记录 last_market_ts）
-            ts = getattr(self, "_last_ts_ms", 1700000000000)
-
-            # 关键：你的 OrderEvent 字段是 qty，不是 quantity
-            side = Side.SELL if pos > 0 else Side.BUY
-            qty = abs(pos)
-
-            order = OrderEvent(
-                type=EventType.ORDER,
-                timestamp_ms=ts,
-                symbol=symbol,
-                client_order_id=f"finalize-{ts}",
-                side=side,
-                order_type=OrderType.MKT,
-                qty=qty,
-                limit_price=0.0,
-                strategy_id="finalize",
-            )
-
-            self._queue.put(order)
-
-            # drain 队列直到仓位归零
-            steps = 0
-            while steps < self.config.max_flatten_steps:
-                drained_any = False
-
-                while True:
-                    try:
-                        event = self._queue.get_nowait()
-                    except Empty:
-                        break
-
-                    drained_any = True
-
-                    if event.type == EventType.MARKET:
-                        sig2 = self.strategy.on_market(event)  # type: ignore
-                        if sig2 is not None:
-                            self._queue.put(sig2)
-
-                    elif event.type == EventType.SIGNAL:
-                        order2 = self.portfolio.on_signal(event)  # type: ignore
-                        if order2 is not None:
-                            self._queue.put(order2)
-
-                    elif event.type == EventType.ORDER:
-                        fill = self.execution.on_order(event)  # type: ignore
-                        if fill is not None:
-                            self._queue.put(fill)
-
-                    elif event.type == EventType.FILL:
-                        self.portfolio.on_fill(event)  # type: ignore
-
-                if getattr(self.portfolio, "position", 0) == 0:
-                    return
-                if not drained_any:
-                    break
-
-                steps += 1
-
-            raise RuntimeError(f"Flatten on end failed. Final position={self.portfolio.position}")
-
-        finally:
-            self._finalizing = False
-
+from src.engine.event_loop import EventLoop
+from src.modes.backtest import BacktestMode, BacktestConfig
 
 def main() -> None:
     setup_logging(level="INFO")
     log = get_logger("backtest")
     log.info("BOOT")
-    
-    engine = BacktestEngine(
-        data = CSVHandler(
-            csv_path = "data/sample_AAPL.csv",
-            symbol = "AAPL",
-        ),
-        strategy = DummyStrategy(),
-        portfolio = DummyPortfolio(),
-        execution = DummyExecution()
-    )
-    engine.run()
-    ##print("Done. Final position:", engine.portfolio.position)
 
+    loop = EventLoop(
+        data=CSVHandler(
+            csv_path="data/sample_AAPL.csv",
+            symbol="AAPL",
+        ),
+        strategy=DummyStrategy(),
+        portfolio=DummyPortfolio(),
+        execution=DummyExecution(),
+    )
+    mode = BacktestMode(
+        loop=loop,
+        config=BacktestConfig(flatten_on_end=True, max_flatten_steps=10),
+    )
+    mode.run()
 
 if __name__ == "__main__":
     main()
