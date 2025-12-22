@@ -4,6 +4,7 @@ from queue import SimpleQueue,Empty
 from typing import Protocol, Optional, Iterable
 from src.data.csv_handler import CSVHandler
 from src.utils.logging import setup_logging, get_logger
+from src.engine.event_loop import EventLoop
 
 from src.core.events import(
     Event, EventType,
@@ -152,43 +153,28 @@ class BacktestEngine:
     config: BacktestConfig = field(default_factory=BacktestConfig)
 
     def __post_init__(self) -> None:
-        self._queue: SimpleQueue[Event] = SimpleQueue()
+        self._last_ts_ms = 0
 
     def run(self) -> None:
-        while self.data.has_next():
-            market = self.data.stream_next()
-            self._last_ts_ms = market.timestamp_ms
-            self._queue.put(market)
+        log = get_logger("backtest.engine")
+        log.info("RUN_START")
+        loop = EventLoop(
+            data=self.data,
+            strategy=self.strategy,
+            portfolio=self.portfolio,
+            execution=self.execution,
+        )
 
-            while True:
-                try:
-                    event = self._queue.get_nowait()
-                except Empty:
-                    break
-                except Exception as e:
-                    logger.exception("QUEUE_DEAIN_ERROR",)
-                    raise
+        loop.run_until_data_end()
 
-                if event.type == EventType.MARKET:
-                    sig = self.strategy.on_market(event)  # type: ignore
-                    if sig is not None:
-                        self._queue.put(sig)
-                
-                elif event.type == EventType.SIGNAL:
-                    order = self.portfolio.on_signal(event)  # type: ignore
-                    if order is not None:
-                        self._queue.put(order)
-                
-                elif event.type == EventType.ORDER:
-                    fill = self.execution.on_order(event)  # type: ignore
-                    if fill is not None:
-                        self._queue.put(fill)
-                
-                elif event.type == EventType.FILL:
-                    self.portfolio.on_fill(event)  # type: ignore
+        # 同步 last_ts，给 finalize 用
+        self._last_ts_ms = loop.last_ts_ms
+        # 复用同一个队列用于 finalize（把 loop.queue 引用过来）
+        self._queue = loop.queue  # type: ignore[attr-defined]
         self._finalize_backtest()
-        print(f"Done. Final position: {self.portfolio.position}")
 
+        log.info("RUN_DONE final_position=%s", getattr(self.portfolio, "position", None))
+        print(f"Done. Final position: {self.portfolio.position}")
 
     def _finalize_backtest(self) -> None:
     # 防重入：必须用 try/finally，避免提前 return 导致 _finalizing 永久为 True

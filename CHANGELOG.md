@@ -2,6 +2,9 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Changed
+- Extracted the generic event-driven loop into src/engine/event_loop.py and reused it in backtest engine.
+
 ### Added
 - Added unified logging module (src/utils/logging.py) with console + file handlers (logs/app.<run_id>.log).
 
@@ -10,9 +13,3 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Introduced CHANGELOG.md to enforce traceable engineering changes.
-
-### Changed
-- N/A
-
-### Fixed
-- N/A
