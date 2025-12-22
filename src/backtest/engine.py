@@ -1,10 +1,9 @@
 from __future__ import annotations
-
 from dataclasses import dataclass, field
 from queue import SimpleQueue,Empty
 from typing import Protocol, Optional, Iterable
-
 from src.data.csv_handler import CSVHandler
+from src.utils.logging import setup_logging, get_logger
 
 from src.core.events import(
     Event, EventType,
@@ -164,8 +163,11 @@ class BacktestEngine:
             while True:
                 try:
                     event = self._queue.get_nowait()
-                except Exception:
+                except Empty:
                     break
+                except Exception as e:
+                    logger.exception("QUEUE_DEAIN_ERROR",)
+                    raise
 
                 if event.type == EventType.MARKET:
                     sig = self.strategy.on_market(event)  # type: ignore
@@ -270,6 +272,10 @@ class BacktestEngine:
 
 
 def main() -> None:
+    setup_logging(level="INFO")
+    log = get_logger("backtest")
+    log.info("BOOT")
+    
     engine = BacktestEngine(
         data = CSVHandler(
             csv_path = "data/sample_AAPL.csv",
