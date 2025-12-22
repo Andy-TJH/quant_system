@@ -2,6 +2,9 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Fixed
+- Fixed performance summary printing location in BacktestMode (moved from class body into run()).
+
 ### Added
 - Added DryRun mode (src/modes/dryrun.py).
 - Added paper execution handler for simulated fills (src/execution/paper.py).
