@@ -1,8 +1,11 @@
 # Python
 __pycache__/
+*.py[cod]
 *.pyc
 *.pyo
 *.pyd
+.pytest_cache/
+.mypy_cache/
 
 # Virtual env
 .venv/
@@ -25,11 +28,6 @@ logs/
 data/*.csv
 data/*.parquet
 data/*.feather
-
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-
 
 # data cache
 data/cache/
