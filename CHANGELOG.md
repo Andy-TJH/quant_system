@@ -2,6 +2,9 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Changed
+- Removed legacy `test/` directory and unified all tests under `tests/`.
+
 ### Fixed
 - Fixed performance summary printing location in BacktestMode (moved from class body into run()).
 
