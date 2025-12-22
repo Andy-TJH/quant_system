@@ -3,6 +3,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 ### Added
+- Added DryRun mode (src/modes/dryrun.py).
+- Added paper execution handler for simulated fills (src/execution/paper.py).
+- Added dryrun entry script (scripts/run_dryrun.py).
+
+### Changed
+- EventLoop now optionally forwards market close prices to execution via on_market_price (duck-typed).
+
+### Fixed
+- Added public EventLoop.drain() API to support mode-level finalize flatten.
+
+### Added
 - Added backtest mode (src/modes/backtest.py) to host flatten logic.
 
 ### Changed
