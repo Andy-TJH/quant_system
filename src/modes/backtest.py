@@ -35,10 +35,8 @@ class BacktestMode:
 
         if hasattr(self.loop.portfolio, "report"):
             summary = self.loop.portfolio.report()  # type: ignore[attr-defined]
-            print("Performance:", summary)
 
         log.info("PERF_SUMMARY %s", summary)
-        print("Performance:", summary)
 
     def _finalize_flatten(self) -> None:
         log = get_logger("mode.backtest")

@@ -65,12 +65,16 @@ class EventLoop:
             if et == EventType.MARKET:
                 if hasattr(self.execution, "on_market_price"):
                     try:
-                        self.execution.on_market_price(event.symbol, event.price) # type: ignore
+                        self.execution.on_market_price(event.symbol, event.close) # type: ignore
                     except Exception as e:
                         log.warning("EXECUTION_ON_MARKET_PRICE_FAILED")
                         raise
 
+                if hasattr(self.portfolio, "on_market"):
+                    self.portfolio.on_market(event)  
+    
                 sig = self.strategy.on_market(event)  # type: ignore
+
                 if sig is not None:
                     log.info("SIGNAL_EMIT", extra={"symbol": getattr(sig, "symbol", None), "signal": getattr(sig, "signal", None)})
                     self.queue.put(sig)

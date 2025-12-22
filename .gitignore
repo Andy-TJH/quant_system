@@ -33,3 +33,5 @@ data/*.feather
 data/cache/
 data/processed/
 
+*.egg-info/
+

@@ -38,7 +38,9 @@ class PerformanceTracker:
         self.cash = float(self.initial_cash)
         self.peak_equity = float(self.initial_cash)
 
-    def _append_equity_point(self, timestamp_ms: int) -> None:
+    def _mark_to_market(self, timestamp_ms: int, price: float) -> None:
+        """内部统一的 mark-to-market：写 equity_curve、更新回撤等。"""
+        self.last_price = float(price)
         equity = self.cash + self.position * self.last_price
 
         if equity > self.peak_equity:
@@ -59,8 +61,7 @@ class PerformanceTracker:
         )
 
     def on_market(self, timestamp_ms: int, price: float) -> None:
-        self.last_price = float(price)
-        self._append_equity_point(timestamp_ms=timestamp_ms)
+        self._mark_to_market(timestamp_ms, price)
 
     def on_fill(
         self,
@@ -75,50 +76,54 @@ class PerformanceTracker:
         price = float(price)
         commission = float(commission)
 
-        side_u = side.upper()
-
-        # 如果还没有 market price（last_price=0），用成交价兜底
-        if self.last_price == 0.0:
-            self.last_price = price
-
-        if side_u == "BUY":
+        s = side.upper()
+        if s == "BUY":
             self.position += qty
             self.cash -= qty * price + commission
-        else:
+        elif s == "SELL":
             self.position -= qty
             self.cash += qty * price - commission
+        else:
+            raise ValueError(f"Unknown side: {side}")
 
         self.trades.append(
             TradeRecord(
                 timestamp_ms=timestamp_ms,
                 symbol=symbol,
-                side=side_u,
+                side=s,
                 qty=qty,
                 price=price,
                 commission=commission,
             )
         )
 
-        # 关键：成交后也要记录一次 equity，否则 summary 可能拿到成交前的 equity
-        self._append_equity_point(timestamp_ms=timestamp_ms)
+        self._mark_to_market(timestamp_ms, price)
 
     def summary(self) -> Dict[str, Any]:
-        # 用“最新状态”计算最终权益，避免仅依赖 equity_curve[-1] 的时序问题
-        final_equity = self.cash + self.position * self.last_price
-        total_pnl = final_equity - self.initial_cash
+        last_equity = self.equity_curve[-1].equity if self.equity_curve else float(self.initial_cash)
+        total_pnl = last_equity - self.initial_cash
         total_return = 0.0 if self.initial_cash == 0 else total_pnl / self.initial_cash
 
-        # 可选的一致性检查（放在 return 之前才会生效）
-        if len(self.trades) > 0 and self.position == 0 and abs(self.cash - self.initial_cash) < 1e-9:
-            raise RuntimeError("PERF_INCONSISTENT_STATE: trades exist but cash and position unchanged.")
+        total_commission = sum(t.commission for t in self.trades)
 
-        return {
+        out = {
             "initial_cash": self.initial_cash,
-            "final_equity": final_equity,
+            "final_equity": last_equity,
             "total_pnl": total_pnl,
             "total_return": total_return,
             "max_drawdown": self.max_drawdown,
             "trades": len(self.trades),
             "final_position": self.position,
             "last_price": self.last_price,
+            "total_commission": total_commission,
+            "cash": self.cash,  # 方便排查
         }
+
+        eps = 1e-9
+        if total_commission > 0 and abs(self.cash - self.initial_cash) < eps:
+            raise RuntimeError(
+                "PERF_INCONSISTENT_STATE: commission>0 but cash unchanged. "
+                "Commission may not be propagated into fills/portfolio."
+            )
+
+        return out

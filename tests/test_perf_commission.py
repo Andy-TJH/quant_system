@@ -24,4 +24,5 @@ def test_total_pnl_negative_when_commission_applied() -> None:
 
     summary = loop.portfolio.report()  # type: ignore[attr-defined]
     assert summary["trades"] >= 2
-    assert summary["total_pnl"] < 0
+    assert summary["total_commission"] == 2.0
+    assert summary["total_pnl"] == -2.0

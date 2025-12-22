@@ -16,6 +16,7 @@ from src.core.events import(
 from src.engine.event_loop import EventLoop
 from src.modes.backtest import BacktestMode, BacktestConfig
 from src.portfolio.performance_portfolio import PerformancePortfolio
+import time
 
 @dataclass
 class BacktestConfig:
@@ -135,25 +136,23 @@ class DummyPortfolio:
 @dataclass
 class DummyExecution:
     commission: float = 0.0
-    fill_price: float = 100.0  # 0 表示用订单里的 limit_price/或事件价格
+    fill_price: float = 101.0
 
     def on_order(self, event: OrderEvent) -> Optional[FillEvent]:
-        px = self.fill_price
+        # MKT 用 self.fill_price；LMT 用 event.limit_price（如果你有）
+        price = self.fill_price
 
         return FillEvent(
-            type=EventType.FILL,
-            timestamp_ms=event.timestamp_ms,
-            symbol=event.symbol,
-            side=event.side,
-            fill_qty=event.qty,
-            fill_price=px,
+            type = EventType.FILL,                 # 或 typec=...
+            timestamp_ms = event.timestamp_ms,
+            symbol = event.symbol,
+            side = event.side,
+            fill_qty = event.qty,
+            fill_price = price,
+            commission = self.commission,
 
-            # 关键：手续费写进去
-            commission=self.commission,
-
-            # 关键：FillEvent 需要的两个 id（按你 dataclass 字段名）
-            client_order_id=event.client_order_id,
-            gateway_order_id=f"gw-{event.client_order_id}",
+            client_order_id = event.client_order_id,
+            gateway_order_id = f"gw-{event.client_order_id}-{int(time.time()*1000)}",
         )
     
 @dataclass
