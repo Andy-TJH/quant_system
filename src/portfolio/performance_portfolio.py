@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 from src.backtest.performance import PerformanceTracker
+from src.portfolio.commission import CommissionModel, ZeroCommission, PercentNotionalCommission
 from src.core.events import (
     MarketEvent, SignalEvent, OrderEvent, FillEvent,
     EventType, SignalType, Side, OrderType,
@@ -11,14 +12,10 @@ import logging
 
 @dataclass
 class PerformancePortfolio:
-    """
-    Portfolio with performance tracking.
-    - Supports your existing on_signal/on_fill
-    - Adds on_market for mark-to-market equity curve
-    """
     initial_cash: float = 100_000.0
     tracker: PerformanceTracker = field(init=False)
     position: int = 0
+    commission_model: CommissionModel = field(default_factory = ZeroCommission)
 
     def __post_init__(self) -> None:
         self.tracker = PerformanceTracker(initial_cash=self.initial_cash)
@@ -64,6 +61,20 @@ class PerformancePortfolio:
             self.position -= event.fill_qty
             side = "SELL"
 
+        commission = float(getattr(event, "commission", 0.0) or 0.0)
+        if commission <= 0.0:
+            commission = float(self.commission_model.calc(
+                symbol = event.symbol,
+                qty = int(event.fill_qty),
+                price = float(event.fill_price),
+                side = event.side,
+            ))
+            #try:
+                #event.commission = commission
+            #except Exception:
+                #log = logging.getLogger("portfolio.performance")
+                #log.warning("SET_EVENT_COMMISSION_FAILED", extra={"commission": commission})
+
         log = logging.getLogger("portfolio.performance")
 
         # record performance
@@ -73,10 +84,10 @@ class PerformancePortfolio:
             side = side,
             qty = event.fill_qty,
             price = event.fill_price,
-            commission = event.commission,
+            commission = commission,
         )
 
-        log = logging.getLogger("portfolio.performance")
+        #log = logging.getLogger("portfolio.performance")
         
         log.info(
             "PERF_TRACKER_APPLIED_FILL",
@@ -84,7 +95,7 @@ class PerformancePortfolio:
                 "side": side,
                 "qty": event.fill_qty,
                 "price": event.fill_price,
-                "commission": event.commission,
+                "commission": commission,
                 "tracker_cash": getattr(self.tracker, "cash", None),
                 "tracker_pos": getattr(self.tracker, "position", None),
             },

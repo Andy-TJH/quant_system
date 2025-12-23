@@ -72,6 +72,7 @@ class PerformanceTracker:
         price: float,
         commission: float,
     ) -> None:
+        
         qty = int(qty)
         price = float(price)
         commission = float(commission)

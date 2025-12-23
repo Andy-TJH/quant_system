@@ -67,7 +67,7 @@ class FillEvent(Event):
     side: Side
     fill_qty: int
     fill_price: float
-    commission: float
+    commission: float = 0.0
     status: OrderStatus = OrderStatus.FILLED
 
 

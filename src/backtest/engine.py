@@ -13,9 +13,9 @@ from src.core.events import(
     SignalType, Side, OrderType,
 )
 
-from src.engine.event_loop import EventLoop
 from src.modes.backtest import BacktestMode, BacktestConfig
 from src.portfolio.performance_portfolio import PerformancePortfolio
+from src.portfolio.commission import PercentNotionalCommission
 import time
 
 @dataclass
@@ -176,7 +176,6 @@ class BacktestEngine:
             execution=self.execution,
         )
 
-
         loop.run_until_data_end()
 
         # 同步 last_ts，给 finalize 用
@@ -198,7 +197,10 @@ def main() -> None:
             symbol="AAPL",
         ),
         strategy=DummyStrategy(),
-        portfolio = PerformancePortfolio(initial_cash=100_000.0),
+        portfolio = PerformancePortfolio(
+            initial_cash=100_000.0,
+            commission_model = PercentNotionalCommission(rate = 0.0003, min_fee = 1.0)
+            ),
         execution=DummyExecution(),
     )
     mode = BacktestMode(

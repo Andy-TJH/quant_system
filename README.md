@@ -1,4 +1,21 @@
-## Engineering Workflow (Quant Dev)
+# Quant Backtest Engine (Event-Driven)
+
+## 1. Overview
+This repo implements an event-driven backtesting engine for A-shares strategy research.
+Core goals:
+- Clear module boundaries (Data / Strategy / Execution / Portfolio-Performance)
+- Deterministic replay and reproducible results
+- Extensible interfaces (commission, slippage, execution model)
+
+## 2. Quick Start
+### 2.1 Environment
+- Python >= 3.x
+- OS: Windows/Linux
+
+### 2.2 Run
+```bash
+py -m src.backtest.engine
+
 
 For the following workstreams:
 - 量化开发
