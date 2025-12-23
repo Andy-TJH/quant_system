@@ -2,6 +2,9 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Tests
+- Add regression tests to ensure per-trade commission is applied and total_pnl stays negative on round-trip trades (prevents commission pipeline from being bypassed).
+
 ### Added
 - Introduced pluggable `CommissionModel` interface.
 - Added `FixedCommission` for per-trade flat fees.
