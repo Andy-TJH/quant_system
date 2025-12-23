@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Added
+- Introduced pluggable `CommissionModel` interface.
+- Added `FixedCommission` for per-trade flat fees.
+
+### Changed
+- `DummyExecution` now delegates fee calculation to `CommissionModel`.
+
 ### Fixed
 - Fixed commission propagation in backtest performance calculation.
   - Ensure `commission` from `ExecutionHandler` is correctly passed to `FillEvent`.
