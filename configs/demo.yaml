@@ -1,0 +1,17 @@
+# configs/demo.yaml
+run:
+  start_date: "2020-01-01"
+  end_date: "2020-01-10"
+  initial_cash: 100000
+
+data:
+  source: "demo"      # 明确是 demo stub
+  symbol: "DEMO"
+
+strategy:
+  name: "BuyAndHold"
+  params:
+    qty: 100
+
+engine:
+  flatten_on_end: true

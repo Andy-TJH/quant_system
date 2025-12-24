@@ -3,14 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from queue import SimpleQueue,Empty
 from typing import Protocol, Optional, Iterable
-
 from src.data.csv_handler import CSVHandler
+from src.utils.logging import setup_logging, get_logger
+from src.engine.event_loop import EventLoop
 
 from src.core.events import(
     Event, EventType,
     MarketEvent, SignalEvent, OrderEvent, FillEvent,
     SignalType, Side, OrderType,
 )
+
+from src.modes.backtest import BacktestMode, BacktestConfig
+from src.portfolio.performance_portfolio import PerformancePortfolio
+from src.portfolio.commission import PercentNotionalCommission
+import time
 
 @dataclass
 class BacktestConfig:
@@ -127,21 +133,26 @@ class DummyPortfolio:
         else:
             self.position -= event.fill_qty
 
-
+@dataclass
 class DummyExecution:
+    commission: float = 0.0
+    fill_price: float = 101.0
+
     def on_order(self, event: OrderEvent) -> Optional[FillEvent]:
-        fill_price = 101.0
-        commission = 1.0
+        # MKT 用 self.fill_price；LMT 用 event.limit_price（如果你有）
+        price = self.fill_price
+
         return FillEvent(
-            type = EventType.FILL,
+            type = EventType.FILL,                 # 或 typec=...
             timestamp_ms = event.timestamp_ms,
             symbol = event.symbol,
-            client_order_id = event.client_order_id,
-            gateway_order_id = f"gid-{event.client_order_id}",
             side = event.side,
             fill_qty = event.qty,
-            fill_price = fill_price,
-            commission = commission
+            fill_price = price,
+            commission = self.commission,
+
+            client_order_id = event.client_order_id,
+            gateway_order_id = f"gw-{event.client_order_id}-{int(time.time()*1000)}",
         )
     
 @dataclass
@@ -153,135 +164,50 @@ class BacktestEngine:
     config: BacktestConfig = field(default_factory=BacktestConfig)
 
     def __post_init__(self) -> None:
-        self._queue: SimpleQueue[Event] = SimpleQueue()
+        self._last_ts_ms = 0
 
     def run(self) -> None:
-        while self.data.has_next():
-            market = self.data.stream_next()
-            self._last_ts_ms = market.timestamp_ms
-            self._queue.put(market)
+        log = get_logger("backtest.engine")
+        log.info("RUN_START")
+        loop = EventLoop(
+            data=self.data,
+            strategy=self.strategy,
+            portfolio=self.portfolio,
+            execution=self.execution,
+        )
 
-            while True:
-                try:
-                    event = self._queue.get_nowait()
-                except Exception:
-                    break
+        loop.run_until_data_end()
 
-                if event.type == EventType.MARKET:
-                    sig = self.strategy.on_market(event)  # type: ignore
-                    if sig is not None:
-                        self._queue.put(sig)
-                
-                elif event.type == EventType.SIGNAL:
-                    order = self.portfolio.on_signal(event)  # type: ignore
-                    if order is not None:
-                        self._queue.put(order)
-                
-                elif event.type == EventType.ORDER:
-                    fill = self.execution.on_order(event)  # type: ignore
-                    if fill is not None:
-                        self._queue.put(fill)
-                
-                elif event.type == EventType.FILL:
-                    self.portfolio.on_fill(event)  # type: ignore
-        self._finalize_backtest()
+        # 同步 last_ts，给 finalize 用
+        self._last_ts_ms = loop.last_ts_ms
+        # 复用同一个队列用于 finalize（把 loop.queue 引用过来）
+        self._queue = loop.queue  # type: ignore[attr-defined]
+
+        log.info("RUN_DONE final_position=%s", getattr(self.portfolio, "position", None))
         print(f"Done. Final position: {self.portfolio.position}")
 
-
-    def _finalize_backtest(self) -> None:
-    # 防重入：必须用 try/finally，避免提前 return 导致 _finalizing 永久为 True
-        if getattr(self, "_finalizing", False):
-            return
-        self._finalizing = True
-        try:
-            if not self.config.flatten_on_end:
-                return
-
-            pos = getattr(self.portfolio, "position", 0)
-            if pos == 0:
-                return
-
-            # 取一个“合理的 symbol”
-            symbol = getattr(self.data, "symbol", None) or "UNKNOWN"
-
-            # 用“当前时间戳”作为收口订单的 timestamp_ms（更稳的做法：记录 last_market_ts）
-            ts = getattr(self, "_last_ts_ms", 1700000000000)
-
-            # 关键：你的 OrderEvent 字段是 qty，不是 quantity
-            side = Side.SELL if pos > 0 else Side.BUY
-            qty = abs(pos)
-
-            order = OrderEvent(
-                type=EventType.ORDER,
-                timestamp_ms=ts,
-                symbol=symbol,
-                client_order_id=f"finalize-{ts}",
-                side=side,
-                order_type=OrderType.MKT,
-                qty=qty,
-                limit_price=0.0,
-                strategy_id="finalize",
-            )
-
-            self._queue.put(order)
-
-            # drain 队列直到仓位归零
-            steps = 0
-            while steps < self.config.max_flatten_steps:
-                drained_any = False
-
-                while True:
-                    try:
-                        event = self._queue.get_nowait()
-                    except Empty:
-                        break
-
-                    drained_any = True
-
-                    if event.type == EventType.MARKET:
-                        sig2 = self.strategy.on_market(event)  # type: ignore
-                        if sig2 is not None:
-                            self._queue.put(sig2)
-
-                    elif event.type == EventType.SIGNAL:
-                        order2 = self.portfolio.on_signal(event)  # type: ignore
-                        if order2 is not None:
-                            self._queue.put(order2)
-
-                    elif event.type == EventType.ORDER:
-                        fill = self.execution.on_order(event)  # type: ignore
-                        if fill is not None:
-                            self._queue.put(fill)
-
-                    elif event.type == EventType.FILL:
-                        self.portfolio.on_fill(event)  # type: ignore
-
-                if getattr(self.portfolio, "position", 0) == 0:
-                    return
-                if not drained_any:
-                    break
-
-                steps += 1
-
-            raise RuntimeError(f"Flatten on end failed. Final position={self.portfolio.position}")
-
-        finally:
-            self._finalizing = False
-
-
 def main() -> None:
-    engine = BacktestEngine(
-        data = CSVHandler(
-            csv_path = "data/sample_AAPL.csv",
-            symbol = "AAPL",
-        ),
-        strategy = DummyStrategy(),
-        portfolio = DummyPortfolio(),
-        execution = DummyExecution()
-    )
-    engine.run()
-    ##print("Done. Final position:", engine.portfolio.position)
+    setup_logging(level="INFO")
+    log = get_logger("backtest")
+    log.info("BOOT")
 
+    loop = EventLoop(
+        data=CSVHandler(
+            csv_path="data/sample_AAPL.csv",
+            symbol="AAPL",
+        ),
+        strategy=DummyStrategy(),
+        portfolio = PerformancePortfolio(
+            initial_cash=100_000.0,
+            commission_model = PercentNotionalCommission(rate = 0.0003, min_fee = 1.0)
+            ),
+        execution=DummyExecution(),
+    )
+    mode = BacktestMode(
+        loop=loop,
+        config=BacktestConfig(flatten_on_end=True, max_flatten_steps=10),
+    )
+    mode.run()
 
 if __name__ == "__main__":
     main()

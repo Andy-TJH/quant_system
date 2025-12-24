@@ -1,8 +1,11 @@
 # Python
 __pycache__/
+*.py[cod]
 *.pyc
 *.pyo
 *.pyd
+.pytest_cache/
+.mypy_cache/
 
 # Virtual env
 .venv/
@@ -21,7 +24,14 @@ logs/
 # Secrets
 .env
 
-# Data (按你的情况调整)
+# Data 
 data/*.csv
 data/*.parquet
 data/*.feather
+
+# data cache
+data/cache/
+data/processed/
+
+*.egg-info/
+
