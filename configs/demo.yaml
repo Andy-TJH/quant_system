@@ -5,7 +5,7 @@ run:
   initial_cash: 100000
 
 data:
-  source: "demo"      # 明确是 demo stub
+  source: "demo"      
   symbol: "DEMO"
 
 strategy:
