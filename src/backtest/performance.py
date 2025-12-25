@@ -56,11 +56,12 @@ class PerformanceTracker:
                 equity=equity,
                 cash=self.cash,
                 position=self.position,
-                last_price=self.last_price,
+                last_price=float(price),
             )
         )
 
     def on_market(self, timestamp_ms: int, price: float) -> None:
+        self.last_price = float(price)
         self._mark_to_market(timestamp_ms, price)
 
     def on_fill(
@@ -97,14 +98,13 @@ class PerformanceTracker:
                 commission=commission,
             )
         )
-
-        self._mark_to_market(timestamp_ms, price)
+        mtm_price = float(price) if price else float(getattr(self, "last_price", 0.0))
+        self._mark_to_market(timestamp_ms, mtm_price)
 
     def summary(self) -> Dict[str, Any]:
         last_equity = self.equity_curve[-1].equity if self.equity_curve else float(self.initial_cash)
         total_pnl = last_equity - self.initial_cash
         total_return = 0.0 if self.initial_cash == 0 else total_pnl / self.initial_cash
-
         total_commission = sum(t.commission for t in self.trades)
 
         out = {
@@ -115,7 +115,7 @@ class PerformanceTracker:
             "max_drawdown": self.max_drawdown,
             "trades": len(self.trades),
             "final_position": self.position,
-            "last_price": self.last_price,
+            "last_price": float(self.equity_curve[-1].last_price) if self.equity_curve else 0.0,
             "total_commission": total_commission,
             "cash": self.cash,  # 方便排查
         }

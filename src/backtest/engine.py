@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import time
+import argparse
+import yaml
 from dataclasses import dataclass, field
 from queue import SimpleQueue,Empty
 from typing import Protocol, Optional, Iterable
@@ -16,7 +19,9 @@ from src.core.events import(
 from src.modes.backtest import BacktestMode, BacktestConfig
 from src.portfolio.performance_portfolio import PerformancePortfolio
 from src.portfolio.commission import PercentNotionalCommission
-import time
+from src.execution.commission import FixedCommission, CommissionModel
+from pathlib import Path
+
 
 @dataclass
 class BacktestConfig:
@@ -45,7 +50,8 @@ class ExecutionHandler(Protocol):
 
 
 class DummyDataHandler:
-    def __init__(self) -> None:
+    def __init__(self, symbol: str = "TEST") -> None:
+        self._symbol = symbol
         self._i = 0
         self._bars = [
             (100.0, 101.0, 99.0, 100.5, 1000.0),
@@ -63,7 +69,7 @@ class DummyDataHandler:
         return MarketEvent(
             type=EventType.MARKET,
             timestamp_ms=ts,
-            symbol = "TEST",
+            symbol = self._symbol,
             open = o, high = h, low = l, close = c, volume = v
         )
     
@@ -135,8 +141,15 @@ class DummyPortfolio:
 
 @dataclass
 class DummyExecution:
-    commission: float = 0.0
-    fill_price: float = 101.0
+    def __init__(self, commission: float = 0.0, commission_model: CommissionModel | None = None, fill_price: float = 0.0):
+        self.fill_price = fill_price
+        self.commission_model = commission_model or FixedCommission(per_trade=commission)
+        self.commission = float(commission)
+
+    def calc_commission(self, price: float, qty: int) -> float:
+        if self.commission_model is not None:
+            return float(self.commission_model.calc(price=price, qty=qty))
+        return float(self.commission)
 
     def on_order(self, event: OrderEvent) -> Optional[FillEvent]:
         # MKT 用 self.fill_price；LMT 用 event.limit_price（如果你有）
@@ -149,8 +162,7 @@ class DummyExecution:
             side = event.side,
             fill_qty = event.qty,
             fill_price = price,
-            commission = self.commission,
-
+            commission=self.calc_commission(price=price, qty=event.qty),
             client_order_id = event.client_order_id,
             gateway_order_id = f"gw-{event.client_order_id}-{int(time.time()*1000)}",
         )
@@ -191,12 +203,33 @@ def main() -> None:
     log = get_logger("backtest")
     log.info("BOOT")
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", required=True)
+    args = parser.parse_args()
+
+    with open(Path(args.config), "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f) or {}
+
+    data_cfg = config.get("data", {})
+    source = data_cfg.get("source")
+    symbol = data_cfg.get("symbol")
+
+    if not source or not symbol:
+        raise ValueError("config.data.source and config.data.symbol are required")
+    
+    if source == "demo":
+        data_handler = DummyDataHandler(symbol=symbol)
+    elif source == "csv":
+        csv_path = data_cfg.get("csv_path")
+        if not csv_path:
+            raise ValueError("config.data.csv_path is required when source=csv")
+        data_handler = CSVHandler(csv_path=csv_path, symbol=symbol)
+    else:
+        raise ValueError(f"unknown data.source: {source!r}")
+
     loop = EventLoop(
-        data=CSVHandler(
-            csv_path="data/sample_AAPL.csv",
-            symbol="AAPL",
-        ),
-        strategy=DummyStrategy(),
+        data = data_handler,
+        strategy = DummyStrategy(),
         portfolio = PerformancePortfolio(
             initial_cash=100_000.0,
             commission_model = PercentNotionalCommission(rate = 0.0003, min_fee = 1.0)
